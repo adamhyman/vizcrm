@@ -1,0 +1,10 @@
+from rest_framework.routers import DefaultRouter
+
+from . import views
+
+router = DefaultRouter()
+router.register('customers', views.CustomerViewSet)
+router.register('business-accounts', views.BusinessAccountViewSet)
+router.register('customer-groups', views.CustomerGroupViewSet)
+
+urlpatterns = router.urls

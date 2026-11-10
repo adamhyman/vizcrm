@@ -1,4 +1,5 @@
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -31,6 +32,12 @@ class SectionViewSet(StoreScopedViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
+@extend_schema_view(list=extend_schema(parameters=[
+    OpenApiParameter('section', int),
+    OpenApiParameter('active', bool),
+    OpenApiParameter('search', str, description='Part of the product name.'),
+    OpenApiParameter('price_list', int, description='Show effective prices for this price list.'),
+]))
 class ProductViewSet(StoreScopedViewSet):
     """Products. Pass ?price_list=<id> to get effective prices for that list.
 
@@ -92,6 +99,7 @@ class PriceListViewSet(StoreScopedViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
+@extend_schema_view(list=extend_schema(parameters=[OpenApiParameter('price_list', int)]))
 class PriceListItemViewSet(StoreScopedViewSet):
     """Price overrides. Filter with ?price_list=<id>."""
 

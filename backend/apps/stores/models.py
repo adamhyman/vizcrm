@@ -44,6 +44,19 @@ class Weekday(models.IntegerChoices):
     SUNDAY = 6
 
 
+CUSTOMER_FIELD_CHOICES = [('phone', 'Telephone number'), ('email', 'Email'), ('address', 'Address')]
+
+
+def validate_customer_fields(value):
+    allowed = {key for key, _ in CUSTOMER_FIELD_CHOICES}
+    if not isinstance(value, list) or not set(value) <= allowed:
+        raise ValidationError(f"Use a list of: {', '.join(sorted(allowed))}.")
+
+
+def default_customer_required_fields():
+    return ['phone']
+
+
 class Store(models.Model):
     class TaxMode(models.TextChoices):
         EXCLUSIVE = 'exclusive', 'Added on top of product price'
@@ -118,6 +131,11 @@ class Store(models.Model):
 
     # Production
     rack_slot_count = models.PositiveIntegerField(default=50)
+
+    # Customers: what staff must enter when creating a customer (a name always is).
+    customer_required_fields = models.JSONField(
+        default=default_customer_required_fields, blank=True, validators=[validate_customer_fields]
+    )
 
     # Security: staff may only use the system from these IPs / ranges (one per line).
     # Empty means no restriction.

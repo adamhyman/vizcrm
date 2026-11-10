@@ -12,7 +12,7 @@ Mark each feature: `[ ]` undecided · `[MVP]` first release · `[Later]` · `[No
 ## 1. Web back office (Django)
 
 ### Customers (CRM)
-- [ ] Customer records: name, phone, email, addresses, notes
+- [ ] Customer records: name, phone, email, address (one per customer), notes
 - [ ] Care preferences (starch, folding, hangers, detergent, fragrance-free)
 - [ ] Business / account customers billed periodically
 - [ ] Search by name, phone, or order number
@@ -141,7 +141,7 @@ Assumed: the **customer-facing** app.
 | App             | Main models                                                             |
 |-----------------|-------------------------------------------------------------------------|
 | `accounts`      | User (role), Store, StaffShift, ActivityLog                             |
-| `contacts`      | Customer, Address, CarePreference, Waiver                               |
+| `contacts`      | Customer (with address), CarePreference, Waiver                         |
 | `catalog`       | Service, Product, PriceList, PriceListItem, Upcharge, Discount, PromoCode |
 | `orders`        | Order, Ticket, OrderItem, OrderStatusEvent, OrderPhoto                  |
 | `production`    | Stage, Tag (barcode), ScanEvent, Rack, RackSlot, Machine, MaintenanceLog |

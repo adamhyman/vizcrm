@@ -18,7 +18,7 @@ bottom and will be folded in.
 | **Section** | Top-level product grouping and order-entry tab: Dry Cleaning, Laundry, Pressed/Ironed, Repairs, Alterations, Retail. |
 | **Product** | A sellable item in a section (Suit, Duvet, Laundry per lb…). |
 | **Price list** | Named set of prices ("Default", per business, per customer). |
-| **Customer** | Individual or linked to a **Business account** (with departments). |
+| **Customer** | Individual or linked to a **Business account**. |
 | **Order** | Items + due date + status + payments. Types: in-store, quick drop, pickup & delivery, retail sale. |
 | **Item / garment** | One physical piece within an order line, with its own attributes and barcode. |
 | **Rack slot** | Numbered storage location for finished orders (1–N, or codes like "A-42"). |
@@ -139,8 +139,7 @@ each selectable and editable separately (or apply to all checked). Copy / delete
 - **Address**, **Preferences**, **Notes**.
 
 ### Business accounts
-- Business with departments (e.g. hotel: Front Desk, Housekeeping); orders grouped by
-  department on invoices.
+- A business (e.g. a hotel) whose customers' orders are billed together. No departments.
 
 ### Customer groups
 - Named groups used for pricing/marketing (Settings → Workflow → Customers).
@@ -181,8 +180,7 @@ each selectable and editable separately (or apply to all checked). Copy / delete
 - New invoice: bill-to account; date range **Monthly** (billing month) / **Custom** /
   **All Unpaid**; payment due date; invoice date; which order date to use
   (cleaned / created); discount %; tax calculation method.
-- Live preview: store header, invoice #, dates, bill-to, orders grouped by
-  department with per-group subtotals, subtotal, total.
+- Live preview: store header, invoice #, dates, bill-to, orders, subtotal, total.
 - Drafts, scheduled (recurring) invoices, statements.
 - Email when invoice paid.
 

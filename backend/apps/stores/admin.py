@@ -3,7 +3,7 @@ import datetime
 from django import forms
 from django.contrib import admin
 
-from .models import BusinessHours, ClosedDate, Shift, Station, Store, TaxRate, Weekday, timezone_choices
+from .models import CUSTOMER_FIELD_CHOICES, BusinessHours, ClosedDate, Shift, Station, Store, TaxRate, Weekday, timezone_choices
 
 
 def hour_label(value):
@@ -58,6 +58,12 @@ class StoreForm(forms.ModelForm):
         required=False,
         widget=MultiSelectDropdown(placeholder='None'),
         help_text="Days that don't count towards turnaround, e.g. Sunday.",
+    )
+    customer_required_fields = forms.MultipleChoiceField(
+        label='Required when creating a customer',
+        choices=CUSTOMER_FIELD_CHOICES,
+        required=False,
+        widget=MultiSelectDropdown(placeholder='Name only'),
     )
 
     class Meta:
@@ -129,6 +135,7 @@ class StoreAdmin(admin.ModelAdmin):
             'turnaround_excluded_weekdays',
         )}),
         ('Pricing & production', {'fields': ('express_multiplier', 'rack_slot_count')}),
+        ('Customers', {'fields': ('customer_required_fields',)}),
         ('Security', {'fields': ('allowed_ips',)}),
     )
     inlines = [StationInline, TaxRateInline, BusinessHoursInline, ShiftInline, ClosedDateInline]

@@ -15,7 +15,7 @@ class StoreSerializer(serializers.ModelSerializer):
             'turnaround_days', 'ready_time', 'cutoff_time',
             'express_turnaround_days', 'express_ready_time',
             'turnaround_excluded_weekdays',
-            'express_multiplier', 'rack_slot_count', 'allowed_ips',
+            'express_multiplier', 'rack_slot_count', 'customer_required_fields', 'allowed_ips',
         ]
 
 
