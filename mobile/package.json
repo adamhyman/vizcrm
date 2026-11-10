@@ -1,0 +1,7 @@
+{
+  "name": "vizcrm-mobile",
+  "private": true,
+  "scripts": {
+    "crm": "pnpm --filter crm start"
+  }
+}

@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Python / Django
+__pycache__/
+*.pyc
+.venv/
+db.sqlite3
+.env
+
+# JS / Expo (per-app rules live in each app's .gitignore)
+node_modules/
+.expo/
+
+# Reference screenshots (may contain customer personal data)
+screenshots/
+media/

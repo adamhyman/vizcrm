@@ -1,0 +1,12 @@
+[project]
+name = "vizcrm-backend"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "django>=6.1.3",
+    "django-cors-headers>=4.9.0",
+    "djangorestframework>=3.18.3",
+    "djangorestframework-simplejwt>=5.5.1",
+    "drf-spectacular>=0.30.0",
+    "pillow>=13.0.0",
+]
