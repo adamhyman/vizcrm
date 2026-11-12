@@ -1,10 +1,12 @@
 import datetime
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
+from apps.stores.testing import create_staff, create_store
 
 from .models import BusinessHours, ClosedDate, Store, TaxRate
 from .services import due_at, ip_allowed
@@ -19,7 +21,7 @@ def la(*args):
 class DueDateTests(TestCase):
     def setUp(self):
         # 2026-11-02 is a Monday.
-        self.store = Store.objects.create(name='Main St', turnaround_days=2, ready_time=datetime.time(17))
+        self.store = create_store(name='Main St', turnaround_days=2, ready_time=datetime.time(17))
 
     def test_counts_turnaround_days_at_ready_time(self):
         self.assertEqual(due_at(self.store, la(2026, 11, 2, 9)), la(2026, 11, 4, 17))
@@ -116,17 +118,58 @@ class IpAllowListTests(TestCase):
 
 class StoreApiTests(TestCase):
     def setUp(self):
-        self.store = Store.objects.create(name='Main St')
-        self.user = User.objects.create_user('alex', password='pw', store=self.store)
+        self.store = create_store(name='Main St')
+        self.user = create_staff('alex', self.store)
         self.client = APIClient()
         self.client.force_authenticate(self.user)
 
     def test_current_store_read_and_update(self):
         self.assertEqual(self.client.get('/api/store/').json()['name'], 'Main St')
-        response = self.client.patch('/api/store/', {'turnaround_days': 3, 'city': 'Pasadena'}, format='json')
+        response = self.client.patch(
+            '/api/store/', {'turnaround_days': 3, 'city': 'Pasadena', 'express_multiplier': '1.75'}, format='json'
+        )
         self.assertEqual(response.status_code, 200)
         self.store.refresh_from_db()
-        self.assertEqual((self.store.turnaround_days, self.store.city), (3, 'Pasadena'))
+        self.assertEqual(
+            (self.store.turnaround_days, self.store.city, self.store.express_multiplier),
+            (3, 'Pasadena', Decimal('1.75')),
+        )
+
+    def test_current_company_contact_read_and_update(self):
+        response = self.client.get('/api/company/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {field: response.json()[field] for field in ('primary_contact', 'phone', 'email', 'website')},
+            {'primary_contact': '', 'phone': '', 'email': '', 'website': ''},
+        )
+        self.assertNotIn('express_multiplier', response.json())
+
+        response = self.client.patch(
+            '/api/company/',
+            {
+                'primary_contact': 'Alex Smith',
+                'phone': '555-0100',
+                'email': 'alex@example.com',
+                'website': 'https://example.com',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.store.company.refresh_from_db()
+        self.assertEqual(
+            (
+                self.store.company.primary_contact,
+                self.store.company.phone,
+                self.store.company.email,
+                self.store.company.website,
+            ),
+            ('Alex Smith', '555-0100', 'alex@example.com', 'https://example.com'),
+        )
+
+    def test_current_company_rejects_invalid_contact_email(self):
+        response = self.client.patch('/api/company/', {'email': 'not-an-email'}, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('email', response.json())
 
     def test_store_field_validation(self):
         for field, bad in [
@@ -203,8 +246,8 @@ class StoreApiTests(TestCase):
 
 class StoreTimezoneAdminTests(TestCase):
     def setUp(self):
-        self.store = Store.objects.create(name='Main St', timezone='America/New_York')
-        self.user = User.objects.create_superuser('boss', 'b@example.com', 'pw', store=self.store)
+        self.store = create_store(name='Main St', timezone='America/New_York')
+        self.user = User.objects.create_superuser('boss', 'b@example.com', 'pw', company=self.store.company)
         self.client.force_login(self.user)
 
     def test_admin_runs_in_store_timezone(self):
@@ -218,16 +261,55 @@ class StoreTimezoneAdminTests(TestCase):
         self.assertIn('<select name="timezone"', html)
         self.assertIn('<option value="America/New_York" selected>', html)
 
+    def test_company_admin_has_a_contact_section(self):
+        html = self.client.get(f'/admin/stores/company/{self.store.company_id}/change/').content.decode()
+        self.assertIn('Contact', html)
+        for field in ('primary_contact', 'phone', 'email', 'website'):
+            self.assertIn(f'name="{field}"', html)
+        self.assertNotIn('name="express_multiplier"', html)
+
+    def test_store_admin_has_express_multiplier(self):
+        html = self.client.get(f'/admin/stores/store/{self.store.pk}/change/').content.decode()
+        self.assertIn('name="express_multiplier"', html)
+
     def test_users_without_store_stay_on_utc(self):
-        self.user.store = None
+        self.user.company = None
         self.user.save()
         html = self.client.get('/admin/').content.decode()
         self.assertIn('data-admin-utc-offset="0"', html)
 
 
+class AddStoreAdminTests(TestCase):
+    def setUp(self):
+        self.store = create_store(name='Main St')
+        self.client.force_login(
+            User.objects.create_superuser('boss', 'b@example.com', 'pw', company=self.store.company)
+        )
+
+    def test_add_page_opens_with_default_timezone(self):
+        response = self.client.get('/admin/stores/store/add/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('<option value="America/Los_Angeles" selected>', response.content.decode())
+
+    def test_add_a_second_store_to_the_company(self):
+        from .admin import StoreForm
+
+        initial = StoreForm().initial
+        data = {k: v for k, v in initial.items() if v is not None and k != 'logo'}
+        data.update({'company': self.store.company_id, 'name': 'Uptown', 'country': 'US', 'language': 'en',
+                     'currency': 'USD', 'weight_unit': 'lb', 'distance_unit': 'imperial', 'tax_mode': 'exclusive',
+                     'turnaround_days': 2, 'express_multiplier': '1.50', 'rack_slot_count': 50,
+                     'detailing_orders': 'quick_drop',
+                     'first_order_discount_percent': '0', 'minimum_order_amount': '0',
+                     'minimum_express_order_amount': '0'})
+        form = StoreForm(data=data)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.save().company, self.store.company)
+
+
 class StoreAdminFormTests(TestCase):
     def setUp(self):
-        self.store = Store.objects.create(name='Main St')
+        self.store = create_store(name='Main St')
 
     def form_data(self, **overrides):
         from .admin import StoreForm

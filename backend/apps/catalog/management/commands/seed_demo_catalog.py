@@ -6,7 +6,7 @@ from django.db import transaction
 
 from apps.accounts.models import User
 from apps.catalog.models import PriceList, Product, Section, Upcharge
-from apps.stores.models import BusinessHours, Station, Store, TaxRate
+from apps.stores.models import BusinessHours, Company, Station, Store, TaxRate
 
 # (section, [(product, price, pieces_per_unit, pricing_unit)])
 CATALOG = [
@@ -40,16 +40,18 @@ CATALOG = [
 
 
 class Command(BaseCommand):
-    help = 'Create (or top up) a demo store with sections, products, prices and upcharges.'
+    help = 'Create (or top up) a demo company and store with sections, products, prices and upcharges.'
 
     def add_arguments(self, parser):
-        parser.add_argument('--store', default='VIZCRM Demo', help='Store name to create or reuse.')
-        parser.add_argument('--user', help='Username of an existing user to attach to the store as staff.')
+        parser.add_argument('--company', default='VIZCRM Demo', help='Company name to create or reuse.')
+        parser.add_argument('--store', default='VIZCRM Demo', help="Store name to create or reuse in the company.")
+        parser.add_argument('--user', help='Username of an existing user to allow at the store as staff.')
 
     @transaction.atomic
-    def handle(self, *args, store, user, **options):
+    def handle(self, *args, company, store, user, **options):
+        company_obj, _ = Company.objects.get_or_create(name=company)
         store_obj, created = Store.objects.get_or_create(
-            name=store,
+            company=company_obj, name=store,
             defaults={
                 'phone': '(555) 010-0100', 'city': 'Los Angeles', 'region': 'CA',
                 'turnaround_excluded_weekdays': [6],  # Sundays don't count towards turnaround
@@ -62,14 +64,17 @@ class Command(BaseCommand):
                 )
         Station.objects.get_or_create(store=store_obj, name='Station 1')
         TaxRate.objects.get_or_create(store=store_obj, position=1, defaults={'name': 'Sales Tax', 'rate': D('9.5')})
-        PriceList.objects.get_or_create(store=store_obj, is_default=True, defaults={'name': 'Standard'})
-        PriceList.objects.get_or_create(store=store_obj, name='Business Accounts')
+        PriceList.objects.get_or_create(company=company_obj, is_default=True, defaults={'name': 'Standard'})
+        PriceList.objects.get_or_create(company=company_obj, name='Business Accounts')
 
         product_count = 0
         for position, (section_name, products) in enumerate(CATALOG, start=1):
             section, _ = Section.objects.get_or_create(
-                store=store_obj, name=section_name, defaults={'position': position}
+                company=company_obj, name=section_name, defaults={'position': position}
             )
+            if section_name == 'Retail' and not section.retail:
+                section.retail = True
+                section.save(update_fields=['retail'])
             for product_position, (name, price, pieces, unit) in enumerate(products, start=1):
                 _, made = Product.objects.get_or_create(
                     section=section, name=name,
@@ -79,21 +84,26 @@ class Command(BaseCommand):
                 product_count += made
 
         stain, _ = Upcharge.objects.get_or_create(
-            store=store_obj, name='Stain Treatment', defaults={'kind': 'fixed', 'amount': D('3.00')}
+            company=company_obj, name='Stain Treatment', defaults={'kind': 'fixed', 'amount': D('3.00')}
         )
         Upcharge.objects.get_or_create(
-            store=store_obj, name='Delicate Fabric', defaults={'kind': 'percent', 'amount': D('25')}
+            company=company_obj, name='Delicate Fabric', defaults={'kind': 'percent', 'amount': D('25')}
         )
-        stain.products.add(*Product.objects.filter(section__store=store_obj, section__name='Dry Cleaning'))
+        stain.products.add(*Product.objects.filter(section__company=company_obj, section__name='Dry Cleaning'))
 
         if user:
             try:
                 staff = User.objects.get(username=user)
             except User.DoesNotExist as exc:
                 raise CommandError(f'No user named {user!r}. Create one with createsuperuser first.') from exc
-            staff.store, staff.role = store_obj, User.Role.STAFF
-            staff.save(update_fields=['store', 'role'])
-            self.stdout.write(f'Attached {user} to {store_obj}.')
+            if staff.company_id not in (None, company_obj.pk):
+                raise CommandError(f'{user} works for {staff.company}, not {company_obj}.')
+            staff.company, staff.role = company_obj, User.Role.STAFF
+            staff.save(update_fields=['company', 'role'])
+            staff.stores.add(store_obj)
+            self.stdout.write(f'Allowed {user} at {store_obj}.')
 
         verb = 'Created' if created else 'Updated'
-        self.stdout.write(self.style.SUCCESS(f'{verb} store "{store_obj}" ({product_count} new products).'))
+        self.stdout.write(self.style.SUCCESS(
+            f'{verb} store "{store_obj}" of {company_obj} ({product_count} new products).'
+        ))

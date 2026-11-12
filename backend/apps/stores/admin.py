@@ -3,7 +3,7 @@ import datetime
 from django import forms
 from django.contrib import admin
 
-from .models import CUSTOMER_FIELD_CHOICES, BusinessHours, ClosedDate, Shift, Station, Store, TaxRate, Weekday, timezone_choices
+from .models import CUSTOMER_FIELD_CHOICES, BusinessHours, Company, ClosedDate, Shift, Station, Store, TaxRate, Weekday, timezone_choices
 
 
 def hour_label(value):
@@ -72,7 +72,8 @@ class StoreForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        tz = self.instance.timezone if self.instance.pk else self.fields['timezone'].initial
+        # A new store's instance already carries the model defaults.
+        tz = self.instance.timezone
         ready = self.fields['ready_time']
         tz_label = tz.replace('_', ' ')
         ready.help_text = f"In the store's timezone ({tz_label})."
@@ -89,6 +90,18 @@ class StoreForm(forms.ModelForm):
                 field.choices = blank + sorted([*timed, (str(current), hour_label(current))])
         if not self.instance.pk:
             self.initial.setdefault('ready_time', str(Store._meta.get_field('ready_time').default))
+            self.initial.setdefault('timezone', tz)
+        price_lists = self.fields['default_price_list']
+        price_lists.queryset = price_lists.queryset.filter(company=self.instance.company_id)
+        price_lists.empty_label = "Products' own prices"
+        sections = self.fields['detailing_sections']
+        sections.queryset = sections.queryset.filter(company=self.instance.company_id)
+        sections.widget = MultiSelectDropdown(placeholder='All sections', choices=sections.choices)
+        sections.help_text = 'Only applies when sending all in-store orders to detailing.'
+        if not self.instance.company_id:
+            # The company's price lists and sections can only be listed once the store has one.
+            for field in (price_lists, sections):
+                field.help_text = ' '.join(filter(None, [field.help_text, 'Save the store first to choose.']))
 
 
 class StationInline(admin.TabularInline):
@@ -117,13 +130,23 @@ class ClosedDateInline(admin.TabularInline):
     extra = 0
 
 
+@admin.register(Company)
+class CompanyAdmin(admin.ModelAdmin):
+    list_display = ('name',)
+    fieldsets = (
+        (None, {'fields': ('name',)}),
+        ('Contact', {'fields': ('primary_contact', 'phone', 'email', 'website')}),
+    )
+
+
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
     form = StoreForm
-    list_display = ('name', 'city', 'phone', 'timezone', 'turnaround_days')
+    list_display = ('name', 'company', 'city', 'phone', 'timezone', 'turnaround_days')
+    list_filter = ('company',)
     fieldsets = (
         ('Name & location', {'fields': (
-            'name', 'street_address', 'city', 'region', 'postal_code', 'country', 'latitude', 'longitude',
+            'company', 'name', 'street_address', 'city', 'region', 'postal_code', 'country', 'latitude', 'longitude',
         )}),
         ('Contact', {'fields': ('phone', 'email', 'website')}),
         ('Branding', {'fields': ('logo', 'brand_color', 'logo_background_color')}),
@@ -134,7 +157,19 @@ class StoreAdmin(admin.ModelAdmin):
             'express_turnaround_days', 'express_ready_time',
             'turnaround_excluded_weekdays',
         )}),
-        ('Pricing & production', {'fields': ('express_multiplier', 'rack_slot_count')}),
+        ('Pricing', {'fields': (
+            'express_multiplier', 'default_price_list', 'first_order_discount_percent',
+            'minimum_order_amount', 'minimum_express_order_amount',
+        )}),
+        ('Order cleaned & collected', {'fields': (
+            'rack_slot_count', 'require_rack_when_cleaned', 'require_bags_when_cleaned',
+            'reweigh_when_cleaned', 'reweigh_when_collected',
+            'archive_ready_after_days', 'archive_collected_after_days',
+        )}),
+        ('Detailing & Quick Drop', {'fields': (
+            'detailing_enabled', 'quick_drop_enabled', 'detailing_orders', 'detailing_sections',
+            'detailing_show_edit_button',
+        )}),
         ('Customers', {'fields': ('customer_required_fields',)}),
         ('Security', {'fields': ('allowed_ips',)}),
     )

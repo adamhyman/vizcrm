@@ -3,7 +3,7 @@ from rest_framework.test import APIClient
 
 from apps.accounts.models import User
 from apps.catalog.models import PriceList
-from apps.stores.models import Store
+from apps.stores.testing import create_staff, create_store
 
 from .models import BusinessAccount, Customer, CustomerGroup
 from .services import search_customers
@@ -11,12 +11,12 @@ from .services import search_customers
 
 class ContactsFixture(TestCase):
     def setUp(self):
-        self.store = Store.objects.create(name='Main St')
+        self.store = create_store(name='Main St')
         self.jane = Customer.objects.create(
-            store=self.store, first_name='Jane', last_name='Smith', phone='(310) 555-0123', email='jane@example.com'
+            company=self.store.company, first_name='Jane', last_name='Smith', phone='(310) 555-0123', email='jane@example.com'
         )
-        self.john = Customer.objects.create(store=self.store, first_name='John', last_name='Smithers', phone='818 555 9876')
-        self.bob = Customer.objects.create(store=self.store, first_name='Bob', phone='+1 213 555 0100')
+        self.john = Customer.objects.create(company=self.store.company, first_name='John', last_name='Smithers', phone='818 555 9876')
+        self.bob = Customer.objects.create(company=self.store.company, first_name='Bob', phone='+1 213 555 0100')
 
 
 class SearchTests(ContactsFixture):
@@ -52,9 +52,9 @@ class SearchTests(ContactsFixture):
 
 class EffectivePriceListTests(ContactsFixture):
     def test_customer_then_business_then_none(self):
-        hotel_list = PriceList.objects.create(store=self.store, name='Hotel')
-        vip_list = PriceList.objects.create(store=self.store, name='VIP')
-        self.jane.business = BusinessAccount.objects.create(store=self.store, name='Hotel', price_list=hotel_list)
+        hotel_list = PriceList.objects.create(company=self.store.company, name='Hotel')
+        vip_list = PriceList.objects.create(company=self.store.company, name='VIP')
+        self.jane.business = BusinessAccount.objects.create(company=self.store.company, name='Hotel', price_list=hotel_list)
         self.assertEqual(self.jane.effective_price_list(), hotel_list)
         self.jane.price_list = vip_list
         self.assertEqual(self.jane.effective_price_list(), vip_list)
@@ -64,12 +64,12 @@ class EffectivePriceListTests(ContactsFixture):
 class CustomerApiTests(ContactsFixture):
     def setUp(self):
         super().setUp()
-        self.staff = User.objects.create_user('alex', password='pw', store=self.store)
+        self.staff = create_staff('alex', self.store)
         self.client = APIClient()
         self.client.force_authenticate(self.staff)
 
-        self.other_store = Store.objects.create(name='Elsewhere')
-        Customer.objects.create(store=self.other_store, first_name='Secret', phone='310 555 0199')
+        self.other_store = create_store(name='Elsewhere')
+        Customer.objects.create(company=self.other_store.company, first_name='Secret', phone='310 555 0199')
 
     def test_requires_store_staff(self):
         self.client.force_authenticate(User.objects.create_user('cust', password='pw', role=User.Role.CUSTOMER))
@@ -91,7 +91,7 @@ class CustomerApiTests(ContactsFixture):
         }, format='json')
         self.assertEqual(response.status_code, 201, response.json())
         customer = Customer.objects.get(pk=response.json()['id'])
-        self.assertEqual(customer.store, self.store)
+        self.assertEqual((customer.company, customer.home_store), (self.store.company, self.store))
         self.assertEqual((customer.street_address, customer.driver_instructions), ('1 Main St', 'Gate 42'))
 
     def test_update_address(self):
@@ -127,8 +127,8 @@ class CustomerApiTests(ContactsFixture):
         self.assertEqual(response.status_code, 400)
 
     def test_cannot_use_other_store_price_list_or_group(self):
-        other_list = PriceList.objects.create(store=self.other_store, name='Theirs')
-        other_group = CustomerGroup.objects.create(store=self.other_store, name='Theirs')
+        other_list = PriceList.objects.create(company=self.other_store.company, name='Theirs')
+        other_group = CustomerGroup.objects.create(company=self.other_store.company, name='Theirs')
         response = self.client.patch(
             f'/api/customers/{self.jane.pk}/', {'price_list': other_list.pk, 'groups': [other_group.pk]}, format='json'
         )
@@ -136,7 +136,7 @@ class CustomerApiTests(ContactsFixture):
         self.assertEqual(set(response.json()), {'price_list', 'groups'})
 
     def test_business_search(self):
-        BusinessAccount.objects.create(store=self.store, name='Grand Hotel', phone='310 555 0000')
-        BusinessAccount.objects.create(store=self.store, name='Cafe')
+        BusinessAccount.objects.create(company=self.store.company, name='Grand Hotel', phone='310 555 0000')
+        BusinessAccount.objects.create(company=self.store.company, name='Cafe')
         names = [b['name'] for b in self.client.get('/api/business-accounts/?search=hotel').json()]
         self.assertEqual(names, ['Grand Hotel'])

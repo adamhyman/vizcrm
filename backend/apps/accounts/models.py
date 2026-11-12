@@ -9,7 +9,9 @@ class User(AbstractUser):
         CUSTOMER = 'customer', 'Customer'
 
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.STAFF)
-    # The store a staff member or driver works at. Blank for customers and platform admins.
-    store = models.ForeignKey(
-        'stores.Store', on_delete=models.PROTECT, null=True, blank=True, related_name='users'
+    # The company a staff member or driver works for, and the stores they may work at.
+    # Blank for customers and platform admins.
+    company = models.ForeignKey(
+        'stores.Company', on_delete=models.PROTECT, null=True, blank=True, related_name='users'
     )
+    stores = models.ManyToManyField('stores.Store', blank=True, related_name='staff')

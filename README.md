@@ -16,13 +16,15 @@ Requires [uv](https://docs.astral.sh/uv/) (`brew install uv`).
 cd backend
 uv run python manage.py migrate
 uv run python manage.py createsuperuser
-uv run python manage.py seed_demo_catalog --user <your-username>   # demo store + catalog
+uv run python manage.py seed_demo_catalog --user <your-username>   # demo company, store + catalog
 uv run python manage.py runserver
 ```
 
 - Admin: http://127.0.0.1:8000/admin/
 - API docs: http://127.0.0.1:8000/api/docs/
 - JWT login for mobile: `POST /api/auth/token/`
+- Staff allowed at more than one store send the store's ID in an `X-Store` header
+  (`GET /api/my-stores/` lists them); staff at a single store can leave it out.
 
 ## Mobile
 

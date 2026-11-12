@@ -5,7 +5,7 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from apps.catalog.models import PriceList
-from apps.stores.models import Store, hex_color
+from apps.stores.models import Company, Store, hex_color
 
 
 def phone_digits(value):
@@ -18,7 +18,7 @@ class CustomerGroup(models.Model):
     Members are assigned by hand for now; rule-based groups come with marketing.
     """
 
-    store = models.ForeignKey(Store, on_delete=models.CASCADE, related_name='customer_groups')
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='customer_groups')
     name = models.CharField(max_length=60)
     color = models.CharField(max_length=7, blank=True, validators=[hex_color])
     # Flag members with the group's color when they are picked at order entry.
@@ -27,7 +27,7 @@ class CustomerGroup(models.Model):
     class Meta:
         ordering = ['name']
         constraints = [
-            models.UniqueConstraint(fields=['store', 'name'], name='unique_customer_group_name_per_store'),
+            models.UniqueConstraint(fields=['company', 'name'], name='unique_customer_group_name_per_company'),
         ]
 
     def __str__(self):
@@ -37,7 +37,7 @@ class CustomerGroup(models.Model):
 class BusinessAccount(models.Model):
     """A business whose orders are billed together, e.g. a hotel."""
 
-    store = models.ForeignKey(Store, on_delete=models.CASCADE, related_name='business_accounts')
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='business_accounts')
     name = models.CharField(max_length=120)
     contact_name = models.CharField(max_length=120, blank=True)
     phone = models.CharField(max_length=40, blank=True)
@@ -53,7 +53,7 @@ class BusinessAccount(models.Model):
     class Meta:
         ordering = ['name']
         constraints = [
-            models.UniqueConstraint(fields=['store', 'name'], name='unique_business_account_name_per_store'),
+            models.UniqueConstraint(fields=['company', 'name'], name='unique_business_account_name_per_company'),
         ]
 
     def __str__(self):
@@ -67,7 +67,9 @@ class Customer(models.Model):
         EMAIL = 'email', 'Email'
         NONE = 'none', "Don't notify"
 
-    store = models.ForeignKey(Store, on_delete=models.CASCADE, related_name='customers')
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='customers')
+    # Where the customer was added; they can use any of the company's stores.
+    home_store = models.ForeignKey(Store, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     first_name = models.CharField(max_length=60)
     last_name = models.CharField(max_length=60, blank=True)
     # Whether phone / email / an address are required is a store setting.
@@ -119,11 +121,19 @@ class Customer(models.Model):
     # Never shown outside the back office (e.g. not in the customer app).
     private_notes = models.TextField(blank=True)
 
+    # The company's anonymous "Retail customer", used for retail sales to walk-ins.
+    walk_in = models.BooleanField(default=False, editable=False)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['last_name', 'first_name', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company'], condition=models.Q(walk_in=True), name='one_walk_in_customer_per_company'
+            ),
+        ]
 
     def __str__(self):
         return self.full_name
@@ -132,13 +142,23 @@ class Customer(models.Model):
     def full_name(self):
         return f'{self.first_name} {self.last_name}'.strip()
 
-    def effective_price_list(self):
-        """The price list for this customer's orders; None means the products' own prices."""
+    @classmethod
+    def walk_in_for(cls, company):
+        customer, _ = cls.objects.get_or_create(
+            company=company, walk_in=True, defaults={'first_name': 'Retail customer'}
+        )
+        return customer
+
+    def effective_price_list(self, store=None):
+        """The price list for this customer's orders at `store`; None means the products' own prices.
+
+        Their own, else their business account's, else the store's default price list.
+        """
         if self.price_list_id:
             return self.price_list
         if self.business_id and self.business.price_list_id:
             return self.business.price_list
-        return None
+        return store.default_price_list if store else None
 
     def save(self, *args, **kwargs):
         self.phone_digits = phone_digits(self.phone)

@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.db import transaction
 
-from .models import PriceListItem, money
+from .models import PriceListItem, StoreProduct, money
 
 
 @dataclass(frozen=True)
@@ -22,18 +22,31 @@ def price_list_overrides(price_list):
     return {item.product_id: item for item in price_list.items.all()}
 
 
-def unit_price(product, overrides=None):
-    """Effective per-unit prices for a product, applying price-list overrides if given.
+def store_settings(store):
+    """{product_id: StoreProduct} for a store's own prices and availability; empty for None."""
+    if store is None:
+        return {}
+    return {s.product_id: s for s in StoreProduct.objects.filter(store=store)}
 
-    Express falls back to price × the store's express multiplier when no explicit
-    express price is set, both for the product and for a price-list override.
+
+def unit_price(product, store, overrides=None, store_setting=None):
+    """Effective per-unit prices for a product.
+
+    A price-list override wins; otherwise the store's own price (`store_setting`, a
+    StoreProduct) and then the product's. Each of price and express price falls back
+    on its own, and express is price × the store's express multiplier when no
+    explicit express price is set anywhere.
     """
+    multiplier = store.express_multiplier
     item = (overrides or {}).get(product.pk)
-    if item is None:
-        return UnitPrice(product.price, product.default_express_price())
-    multiplier = product.section.store.express_multiplier
-    express = item.express_price if item.express_price is not None else money(item.price * multiplier)
-    return UnitPrice(item.price, express)
+    if item is not None:
+        express = item.express_price if item.express_price is not None else money(item.price * multiplier)
+        return UnitPrice(item.price, express)
+    price, express = product.price, product.express_price
+    if store_setting is not None:
+        price = store_setting.price if store_setting.price is not None else price
+        express = store_setting.express_price if store_setting.express_price is not None else express
+    return UnitPrice(price, express if express is not None else money(price * multiplier))
 
 
 # --- Bulk update -------------------------------------------------------------
@@ -41,7 +54,7 @@ def unit_price(product, overrides=None):
 MONEY_FIELDS = ('price', 'express_price', 'cost_price', 'minimum_price')
 PRICE_LIST_FIELDS = ('price', 'express_price')
 INT_FIELDS = ('extra_days',)
-BOOL_FIELDS = ('active', 'available_online')
+BOOL_FIELDS = ('active', 'available_online', 'request_item_details')
 
 MONEY_OPS = ('set', 'increase_amount', 'decrease_amount', 'increase_percent', 'decrease_percent')
 
@@ -80,17 +93,17 @@ def _validate(changes, price_list):
             raise BulkUpdateError(f'{field!r} needs one of: {", ".join(MONEY_OPS)}.')
 
 
-def _current_value(product, field, item):
+def _current_value(product, field, item, store):
     if item is not None:
         if field == 'express_price':
-            return unit_price(product, {product.pk: item}).express_price
+            return unit_price(product, store, {product.pk: item}).express_price
         return getattr(item, field)
     if field == 'express_price':
-        return product.default_express_price()
+        return product.default_express_price(store)
     return getattr(product, field)
 
 
-def bulk_update_products(products, changes, price_list=None, apply=False):
+def bulk_update_products(products, changes, *, store, price_list=None, apply=False):
     """Preview (and optionally apply) a bulk change to many products.
 
     `changes` maps field name to a spec:
@@ -112,7 +125,7 @@ def bulk_update_products(products, changes, price_list=None, apply=False):
     for product in products:
         item = overrides.get(product.pk)
         for field, change in changes.items():
-            old = _current_value(product, field, item)
+            old = _current_value(product, field, item, store)
             if field in MONEY_FIELDS:
                 new = _apply_money_op(old, change['op'], Decimal(str(change['value'])))
             elif field in INT_FIELDS:

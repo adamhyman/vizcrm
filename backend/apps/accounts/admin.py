@@ -6,5 +6,7 @@ from .models import User
 
 @admin.register(User)
 class VizUserAdmin(UserAdmin):
-    fieldsets = UserAdmin.fieldsets + (('Store', {'fields': ('role', 'store')}),)
-    list_display = ('username', 'email', 'role', 'store', 'is_staff')
+    fieldsets = UserAdmin.fieldsets + (('Company', {'fields': ('role', 'company', 'stores')}),)
+    list_display = ('username', 'email', 'role', 'company', 'is_staff')
+    list_filter = UserAdmin.list_filter + ('company', 'role')
+    filter_horizontal = UserAdmin.filter_horizontal + ('stores',)

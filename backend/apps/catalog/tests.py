@@ -4,7 +4,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
-from apps.stores.models import Store
+from apps.stores.testing import create_staff, create_store
 
 from .models import PriceList, PriceListItem, Product, Section
 from .services import BulkUpdateError, bulk_update_products, price_list_overrides, unit_price
@@ -12,41 +12,41 @@ from .services import BulkUpdateError, bulk_update_products, price_list_override
 
 class CatalogFixture(TestCase):
     def setUp(self):
-        self.store = Store.objects.create(name='Main St')
-        self.dry = Section.objects.create(store=self.store, name='Dry Cleaning', position=1)
+        self.store = create_store(name='Main St')
+        self.dry = Section.objects.create(company=self.store.company, name='Dry Cleaning', position=1)
         self.suit = Product.objects.create(section=self.dry, name='Suit', price=D('10.00'), pieces_per_unit=2)
         self.shirt = Product.objects.create(section=self.dry, name='Shirt', price=D('3.00'), express_price=D('4.00'))
-        self.default_list = PriceList.objects.create(store=self.store, name='Default', is_default=True)
-        self.hotel = PriceList.objects.create(store=self.store, name='Hotel')
+        self.default_list = PriceList.objects.create(company=self.store.company, name='Default', is_default=True)
+        self.hotel = PriceList.objects.create(company=self.store.company, name='Hotel')
 
 
 class UnitPriceTests(CatalogFixture):
     def test_express_defaults_to_store_multiplier(self):
-        self.assertEqual(unit_price(self.suit).express_price, D('15.00'))
+        self.assertEqual(unit_price(self.suit, self.store).express_price, D('15.00'))
 
     def test_explicit_express_price_wins(self):
-        self.assertEqual(unit_price(self.shirt).express_price, D('4.00'))
+        self.assertEqual(unit_price(self.shirt, self.store).express_price, D('4.00'))
 
     def test_express_multiplier_rounds_to_cents(self):
         self.store.express_multiplier = D('1.33')
         self.store.save()
         self.suit.price = D('9.99')
-        self.assertEqual(unit_price(self.suit).express_price, D('13.29'))
+        self.assertEqual(unit_price(self.suit, self.store).express_price, D('13.29'))
 
     def test_price_list_override(self):
         PriceListItem.objects.create(price_list=self.hotel, product=self.suit, price=D('8.00'))
-        prices = unit_price(self.suit, price_list_overrides(self.hotel))
+        prices = unit_price(self.suit, self.store, price_list_overrides(self.hotel))
         self.assertEqual((prices.price, prices.express_price), (D('8.00'), D('12.00')))
 
     def test_products_missing_from_price_list_use_own_price(self):
         PriceListItem.objects.create(price_list=self.hotel, product=self.suit, price=D('8.00'))
-        self.assertEqual(unit_price(self.shirt, price_list_overrides(self.hotel)).price, D('3.00'))
+        self.assertEqual(unit_price(self.shirt, self.store, price_list_overrides(self.hotel)).price, D('3.00'))
 
     def test_default_price_list_has_no_overrides(self):
         self.assertEqual(price_list_overrides(self.default_list), {})
 
     def test_for_order(self):
-        prices = unit_price(self.suit)
+        prices = unit_price(self.suit, self.store)
         self.assertEqual(prices.for_order(express=False), D('10.00'))
         self.assertEqual(prices.for_order(express=True), D('15.00'))
 
@@ -54,47 +54,60 @@ class UnitPriceTests(CatalogFixture):
 class BulkUpdateTests(CatalogFixture):
     def test_preview_does_not_save(self):
         changes = bulk_update_products(
-            [self.suit, self.shirt], {'price': {'op': 'increase_amount', 'value': D('0.50')}}
+            [self.suit, self.shirt], {'price': {'op': 'increase_amount', 'value': D('0.50')}},
+            store=self.store,
         )
         self.assertEqual([(c['old'], c['new']) for c in changes], [(D('10.00'), D('10.50')), (D('3.00'), D('3.50'))])
         self.suit.refresh_from_db()
         self.assertEqual(self.suit.price, D('10.00'))
 
     def test_apply_saves(self):
-        bulk_update_products([self.suit], {'price': {'op': 'increase_percent', 'value': D('5')}}, apply=True)
+        bulk_update_products(
+            [self.suit], {'price': {'op': 'increase_percent', 'value': D('5')}},
+            store=self.store, apply=True,
+        )
         self.suit.refresh_from_db()
         self.assertEqual(self.suit.price, D('10.50'))
 
     def test_percent_rounds_half_up(self):
         self.shirt.price = D('2.99')
-        changes = bulk_update_products([self.shirt], {'price': {'op': 'increase_percent', 'value': D('5')}})
+        changes = bulk_update_products(
+            [self.shirt], {'price': {'op': 'increase_percent', 'value': D('5')}}, store=self.store
+        )
         self.assertEqual(changes[0]['new'], D('3.14'))  # 3.1395
 
     def test_never_goes_below_zero(self):
-        changes = bulk_update_products([self.shirt], {'price': {'op': 'decrease_amount', 'value': D('5')}})
+        changes = bulk_update_products(
+            [self.shirt], {'price': {'op': 'decrease_amount', 'value': D('5')}}, store=self.store
+        )
         self.assertEqual(changes[0]['new'], D('0.00'))
 
     def test_unchanged_values_are_not_listed(self):
-        changes = bulk_update_products([self.suit, self.shirt], {'price': {'op': 'set', 'value': D('3.00')}})
+        changes = bulk_update_products(
+            [self.suit, self.shirt], {'price': {'op': 'set', 'value': D('3.00')}}, store=self.store
+        )
         self.assertEqual([c['product'] for c in changes], ['Suit'])
 
     def test_derived_express_price_becomes_explicit(self):
         bulk_update_products(
-            [self.suit], {'express_price': {'op': 'increase_amount', 'value': D('1')}}, apply=True
+            [self.suit], {'express_price': {'op': 'increase_amount', 'value': D('1')}},
+            store=self.store, apply=True,
         )
         self.suit.refresh_from_db()
         self.assertEqual(self.suit.express_price, D('16.00'))
 
     def test_non_money_fields(self):
         bulk_update_products(
-            [self.suit], {'extra_days': {'value': 2}, 'active': {'value': False}}, apply=True
+            [self.suit], {'extra_days': {'value': 2}, 'active': {'value': False}},
+            store=self.store, apply=True,
         )
         self.suit.refresh_from_db()
         self.assertEqual((self.suit.extra_days, self.suit.active), (2, False))
 
     def test_price_list_target_creates_overrides(self):
         bulk_update_products(
-            [self.suit], {'price': {'op': 'decrease_percent', 'value': D('10')}}, price_list=self.hotel, apply=True
+            [self.suit], {'price': {'op': 'decrease_percent', 'value': D('10')}},
+            store=self.store, price_list=self.hotel, apply=True,
         )
         item = PriceListItem.objects.get(price_list=self.hotel, product=self.suit)
         self.assertEqual(item.price, D('9.00'))
@@ -107,34 +120,37 @@ class BulkUpdateTests(CatalogFixture):
             [self.suit],
             {'price': {'op': 'increase_amount', 'value': D('1')},
              'express_price': {'op': 'set', 'value': D('11.00')}},
-            price_list=self.hotel, apply=True,
+            store=self.store, price_list=self.hotel, apply=True,
         )
         item = PriceListItem.objects.get(price_list=self.hotel, product=self.suit)
         self.assertEqual((item.price, item.express_price), (D('9.00'), D('11.00')))
 
     def test_price_list_target_rejects_non_price_fields(self):
         with self.assertRaises(BulkUpdateError):
-            bulk_update_products([self.suit], {'cost_price': {'op': 'set', 'value': D('1')}}, price_list=self.hotel)
+            bulk_update_products(
+                [self.suit], {'cost_price': {'op': 'set', 'value': D('1')}},
+                store=self.store, price_list=self.hotel,
+            )
 
     def test_requires_a_change(self):
         with self.assertRaises(BulkUpdateError):
-            bulk_update_products([self.suit], {})
+            bulk_update_products([self.suit], {}, store=self.store)
 
 
 class CatalogApiTests(CatalogFixture):
     def setUp(self):
         super().setUp()
-        self.staff = User.objects.create_user('alex', password='pw', store=self.store)
+        self.staff = create_staff('alex', self.store)
         self.client = APIClient()
         self.client.force_authenticate(self.staff)
 
-        other_store = Store.objects.create(name='Elsewhere')
-        self.other_section = Section.objects.create(store=other_store, name='Dry Cleaning')
+        other_store = create_store(name='Elsewhere')
+        self.other_section = Section.objects.create(company=other_store.company, name='Dry Cleaning')
         Product.objects.create(section=self.other_section, name='Secret', price=D('1.00'))
 
     def test_requires_store_staff(self):
         for user in (
-            User.objects.create_user('cust', password='pw', role=User.Role.CUSTOMER, store=self.store),
+            User.objects.create_user('cust', password='pw', role=User.Role.CUSTOMER, company=self.store.company),
             User.objects.create_user('nostore', password='pw'),
         ):
             self.client.force_authenticate(user)
@@ -154,7 +170,7 @@ class CatalogApiTests(CatalogFixture):
         self.assertEqual(rows['Shirt']['effective_price'], '3.00')
 
     def test_price_list_from_other_store_is_404(self):
-        other_list = PriceList.objects.create(store=self.other_section.store, name='Theirs')
+        other_list = PriceList.objects.create(company=self.other_section.company, name='Theirs')
         self.assertEqual(self.client.get(f'/api/products/?price_list={other_list.pk}').status_code, 404)
 
     def test_cannot_create_product_in_other_store_section(self):
@@ -167,7 +183,7 @@ class CatalogApiTests(CatalogFixture):
     def test_create_section_attaches_store(self):
         response = self.client.post('/api/sections/', {'name': 'Laundry'}, format='json')
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(Section.objects.get(pk=response.json()['id']).store, self.store)
+        self.assertEqual(Section.objects.get(pk=response.json()['id']).company, self.store.company)
 
     def test_cannot_delete_section_with_products(self):
         self.assertEqual(self.client.delete(f'/api/sections/{self.dry.pk}/').status_code, 409)

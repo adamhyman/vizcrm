@@ -4,8 +4,7 @@ What the system must *do*, written from reference screenshots of how an existing
 laundry POS behaves (`screenshots/`, not committed). This records behavior, data
 and rules only — layout, styling, icons and wording are ours to design.
 
-Coverage: ~40 of 113 screenshots reviewed in detail; the rest are listed at the
-bottom and will be folded in.
+Coverage: all 113 screenshots reviewed.
 
 ---
 
@@ -13,12 +12,13 @@ bottom and will be folded in.
 
 | Concept | Notes |
 |---|---|
-| **Store** | Name, address, phone, tax ID, hours, shifts. Multi-store later. |
+| **Company** | Name and primary contact details (contact, phone, email, website). Owns one or more stores, which share its catalog (sections, products, price lists, upcharges) and customers. Order numbers count across the company. |
+| **Store** | Name, address, phone, tax ID, hours, shifts, turnaround and order settings, including its express-price multiplier; its own orders. Can set its own price for a product or not sell it. |
 | **Station** | A till/register in a store (e.g. "Station 1"). Cash-ups are per station. |
 | **Section** | Top-level product grouping and order-entry tab: Dry Cleaning, Laundry, Pressed/Ironed, Repairs, Alterations, Retail. |
 | **Product** | A sellable item in a section (Suit, Duvet, Laundry per lb…). |
 | **Price list** | Named set of prices ("Default", per business, per customer). |
-| **Customer** | Individual or linked to a **Business account**. |
+| **Customer** | Individual or linked to a **Business account**. Shared by the company's stores; remembers the store they were added at. |
 | **Order** | Items + due date + status + payments. Types: in-store, quick drop, pickup & delivery, retail sale. |
 | **Item / garment** | One physical piece within an order line, with its own attributes and barcode. |
 | **Rack slot** | Numbered storage location for finished orders (1–N, or codes like "A-42"). |
@@ -43,7 +43,10 @@ Created ──► Detailing (optional) ──► Cleaning ──► Ready (racke
 - **Collected** closes the order; payment is taken here if unpaid.
 - Orders can be archived automatically after N days (setting, default never).
 - Every change is recorded in an order **timeline** (status, edits, payments, messages).
-- **Order edits** and **order deletions** are audited (who, when, what).
+- **Order edits** and **order deletions** are audited (who, when, what). An edit-log row is a
+  snapshot: summary, total, status, discount, credit, price list, payment, ready-by, editor, time;
+  the creation snapshot reads "Created by". Deletions record a **reason**.
+- Photos can be attached to an order (or one of its items).
 
 ### Order board (staff)
 - Tabs per stage: Detailing · Cleaning · Ready · Issues.
@@ -54,7 +57,8 @@ Created ──► Detailing (optional) ──► Cleaning ──► Ready (racke
   (Detail / Cleaned / Payment).
 - Bulk select rows; pagination with rows-per-page.
 - **Issues** tab: open/all, search; columns ID, customer, issue text, stage,
-  ready-by, reported (time + staff); action Mark Solved. "New Issue" button.
+  ready-by, reported (time + staff); action Mark Solved, which asks for an
+  **explanation** of how it was resolved. "New Issue" button picks the order.
 
 ### Order detail
 - Header: order #, customer, status, rack, due date, total, paid state, invoice state.
@@ -95,14 +99,14 @@ each selectable and editable separately (or apply to all checked). Copy / delete
 
 | Attribute | Behavior |
 |---|---|
-| Colors | Quick list + "More" (≈40 total), multi-select, some with swatches |
+| Colors | Quick list + "More" (≈40 total), **max 2**, some with swatches |
 | Upcharges | Product-specific extra charges |
 | Notes | Free text ("extra starch") |
 | Barcode ID | Scan or type the garment tag |
 | Damage | Pick list, **max 3** (hole, tear, missing button, iron shine, faded…) |
-| Stains | Pick list |
-| Brand | Pick list / free text |
-| Materials, Patterns, Style | Pick lists |
+| Stains | Pick list, **max 3** |
+| Brand | One brand, from a long searchable list |
+| Materials, Patterns, Style | Pick lists, **max 3** each |
 
 - Price total for the line, with manual price **Edit** (permission-controlled).
 - Product setting **Request Item Details**: when to force this screen (e.g. quick, when pressed).
@@ -119,6 +123,10 @@ each selectable and editable separately (or apply to all checked). Copy / delete
 - **Empty a slot** when collected.
 - Product fields used by assembly / conveyor: slot space, conveyor priority,
   conveyor bag (bag item / …), skip conveyor, require heat-seal tag.
+- Settings: use assisted assembly (rack garments by scanning, grouped by order);
+  number of rack locations; pieces per rack location; remove order from assembly
+  when (e.g. order completed); automatically mark cleaned when all garments
+  scanned; automatically print receipt then; use pre-printed barcode labels.
 
 ---
 
@@ -126,7 +134,8 @@ each selectable and editable separately (or apply to all checked). Copy / delete
 
 ### Customer profile
 - Active orders (status, due date, total), View All.
-- Overview: total orders, lifetime value, average order, unpaid.
+- Overview: total orders, lifetime value, average order, unpaid; tenure (days as customer).
+- Customer list: name, phone, address, days as customer, last review; search; rows per page.
 - Details: route, subscription, repeat pickups, loyalty points, store credit,
   business account, groups, tenure; **Print Barcode** (customer card).
 - Communication thread: automated notifications (order created / cleaned) plus
@@ -151,7 +160,14 @@ each selectable and editable separately (or apply to all checked). Copy / delete
   button image, overlay text, price*, express price*, cost price, minimum price,
   minimum quantity, pieces per product*, extra days (turnaround), ID/SKU,
   assembly fields (see §4), active, available online.
-- Product lists per section; **bulk update prices** (by % or amount, preview changes before applying).
+- Button image is picked from an icon library (black / white / colour garment icons,
+  plus supplies: stain removers, softeners, detergents) or uploaded.
+- Retail goods count **0 pieces**.
+- Products menu also has Item Notes, Preferences and Barcode Labels pages (not captured).
+- Product lists per section, with a price list picker to show that list's prices;
+  drag to reorder; **bulk update** (pick products by section; price, express, cost,
+  minimum price, extra days, active, online, request item details; "Review changes"
+  shows old → new before submitting).
 - Price lists; product discount rules (by time / day).
 - Order pricing defaults: default price list, first-order discount %, minimum order,
   minimum for express.
@@ -168,8 +184,13 @@ each selectable and editable separately (or apply to all checked). Copy / delete
 - Auto-charge saved card when order cleaned (none / P&D only / all).
 - Round order total (rule + scope); cash payment discount %.
 - Require saved card to create order; require payment for retail.
-- Card provider integration with terminal; ask for tip on terminal.
-- Tips: type (amount / % / both), preset amounts and percentages.
+- Card provider integration with terminal; ask for tip on terminal; let customers add
+  a card in the app. Laundromat machine payment systems (later).
+- Tips: accept tips (split among the staff who handled the order); calculate with payroll;
+  **tip split %**: staff who created / cleaned / completed the order, pickup driver,
+  delivery driver. Type (amount / % / both), preset amounts and percentages.
+- Cash-up settings: enable cash-ups; force starting cash at beginning of shift;
+  track cash drawer payouts (shown in cash-ups and a Payouts report).
 
 ### Cash register
 - Per station: open register (opening cash), estimated cash, activity this period
@@ -181,8 +202,26 @@ each selectable and editable separately (or apply to all checked). Copy / delete
   **All Unpaid**; payment due date; invoice date; which order date to use
   (cleaned / created); discount %; tax calculation method.
 - Live preview: store header, invoice #, dates, bill-to, orders, subtotal, total.
-- Drafts, scheduled (recurring) invoices, statements.
+- Invoices list (filter business / customer, status): ID, recipient, reference (e.g.
+  "October 2026"), date, due date (red when overdue), status (Unpaid / Paid (Card) + date),
+  sent, total; actions pay, view, download, email, delete.
+- **Drafts**: business accounts with unpaid orders (count, total) → Create Invoice.
+- **Scheduled**: recipient, frequency (monthly), day of month, days to pay, discount %,
+  order date source, automatically email, automatically charge saved card.
+- **Statements** (customer or business): period (this month / last month / this quarter /
+  custom), opening balance, invoiced, payments, balance due, account activity; email it.
+- Settings: invoice style (group by orders), pay-by-invoice only for business accounts,
+  allow partial payment, show order summaries / notes, skip repeat invoice with no
+  orders, invoice prefix, payment terms (default NET 30); for customer and business
+  invoices separately: payment due days, overdue reminders, payment instructions.
 - Email when invoice paid.
+
+### Discounts & promos
+- Loyalty points scheme (points convert to store credit); referral codes.
+- Promo codes: code, type (e.g. % for one order), discount, max uses, show in POS,
+  expiry, where usable (account create / in-store / P&D / lockers), assign customer to business.
+- Product discount rules: name, discount, scope, date range, time, weekdays.
+- Promo carousels for the customer app: title, text, active.
 
 ### Tax
 - Up to 3 named tax rates; tax added on top of price or included; tax/VAT ID.
@@ -203,12 +242,26 @@ each selectable and editable separately (or apply to all checked). Copy / delete
   diameter km/mi or by drive time; drag/add/remove corners), **time slots**
   per weekday (e.g. 8–10 AM, "pickup & delivery", max 10 per slot),
   **closed dates**. View out-of-service-area requests. Reassign customers to routes.
+- Closed date: optionally reschedule repeat pickups to another date; apply to all routes.
+- Scheduled tab has a map with pan / circle / polygon selection; Driver History shows
+  each driver's path and stops on a map for a day.
 - General P&D settings; Uber courier integration.
+
+### General settings
+- Enable P&D (own drivers). Account creation: create-order-before-account flow, assign
+  route on signup by geofence, address check before signup, preferences to ask for,
+  where to show the promo box, terms & conditions.
+- Customer order flow (choose items, or just book), ask how many bags.
+- Turnaround: customers book a delivery slot; days of slots shown; earliest pickup
+  (today / anytime); minimum hours between pickup and delivery; days to skip.
+- Customer changes: cancel up to X h before pickup, edit order X h before, edit
+  delivery slot X h before. Optional app features: sell gift cards, pricing page.
 
 ### Pricing & fees
 - P&D default price list, minimum order, first-order discount, allow customer price lists.
 - Delivery fee $ for orders under $X; super-express and express fees ($ or %) by turnaround hours;
   exclude delivery fee from discounts; delivery fee tax exemptions; "nothing to pick up" fee.
+- Tips for P&D: type (amount / % / both, default shown), preset amounts and percentages.
 
 ### Repeat pickups
 - Enable; price list; default flow (e.g. auto-create order 24h before);
@@ -243,8 +296,13 @@ each selectable and editable separately (or apply to all checked). Copy / delete
 - Reminders if ready > 7 days (email / SMS).
 - Push via customer app with email/SMS fallback.
 - SMS credit balance, auto top-up, delay SMS after cleaned. WhatsApp (later).
-- Review requests (settings page) and reviews list.
-- **Inbox:** two-way customer conversations.
+- Payment notices: email when invoice paid; tell customer when auto-charge fails.
+- **Reviews** settings: send requests by (channel), max requests per customer, delay,
+  minimum first rating before asking for a public review; Google / Yelp / Facebook /
+  Nextdoor review URLs. Reviews page: total, average, NPS, rating trend by month,
+  ratings by section, recent reviews (customer, order, section, rating, comment, channel, date).
+- **Inbox:** Inbox / Sent / Deleted; mark read, delete; new message to a customer by SMS
+  or email, with attachments and a 160-character counter for SMS.
 
 ---
 
@@ -259,7 +317,10 @@ each selectable and editable separately (or apply to all checked). Copy / delete
   has left review, first-order anniversary, order count, in-store order count,
   order count in a section, total spend, average order value, odd customer IDs (A/B).
   Live "N customers match" with view list.
-- Marketing groups (saved audiences). Loyalty points and referral program settings.
+- Email: subject, title, message, call-to-action button (none / use a promo code, with
+  label and codes); live preview with unsubscribe link.
+- Marketing groups: name, description, contacts (import CSV / add manually / later).
+  Loyalty points and referral program settings.
 - Promo codes: code, type (% for one order, …), discount, max uses, show in POS,
   expiry, where usable (on account create, in-store, P&D, lockers), assign to business.
 - Promo carousel (customer app).
@@ -276,8 +337,13 @@ each selectable and editable separately (or apply to all checked). Copy / delete
   - Reports: view metrics, manage invoices, data export, audits
   - Admin: admin page, bypass IP restriction
   - Other: manage marketing, manage printers
-- Login history, user hours (clock in/out), order edits log, order deletions log.
-- Store security settings (e.g. IP restriction).
+- New user: name*, email*, password*, PIN, phone, access mode, limit driver app to
+  routes, training mode (page guides). Payroll: contractor, payment type (salary /
+  hourly), salary, weekly hours, prefill payroll from clock-in times.
+- Login history (user, action, time, IP, device); user hours (clock in / out with IPs,
+  notes, hours; totals; add a shift by hand); order edits log; order deletions log.
+- Store security: force clock-in at start of shift (staff, and separately admins);
+  require PIN after inactivity; IP restriction; list of active sessions.
 - Business hours and store shifts per weekday; shift reports (email at end of shift,
   prompt at clock-out).
 
@@ -290,23 +356,30 @@ each selectable and editable separately (or apply to all checked). Copy / delete
   orders created, tips; revenue by payment method; top sections; top items
   (qty, sales); cash-ups (staff, count, variance); refunds (reason, staff);
   discounts given; pay-ins; tips by staff. Each table downloadable.
+- **Production:** orders cleaned, pieces cleaned, weight processed, overdue orders;
+  order issues; overdue orders; deleted orders (with reason); team activity per staff
+  (new orders, orders cleaned, pieces cleaned, weight, orders completed, hours);
+  driver statistics (pickups, deliveries).
+- **Customers:** active customers, average order value, average sales value, average
+  order frequency; top customers; new customers; products sold to top customers;
+  at-risk customers (last order, days since, lifetime orders / value); new customers
+  without orders.
+- **Unpaid:** total outstanding with aging (current, 1–30, 31–60, 61–90, 90+ days);
+  per customer: orders, invoices, total due by bucket; filter by customer type and status.
+- **Promotions:** promo codes used, referral codes used, loyalty point claims, reviews.
 
 ---
 
-## 14. Online & integrations (later)
-- Website booking tool, directory listing, hosted website, AI agent.
-- API keys and webhooks for third parties.
+## 14. Inventory
+- Stock for retail products: product, section, SKU, status, quantity; low-stock warning
+  level; barcode; filter by section / status; search; activity log.
 
 ---
 
-## Screenshots not yet reviewed in detail
-Create Order variants (alterations, pressed, repairs, retail, brand/colors/
-materials/patterns/stains/style pickers), Deliveries map, Driver history,
-Edit Customer address/notes, Home customer dropdown, Icons, Inbox, Invoices
-list/drafts/custom/all-unpaid/scheduled, Marketing email/groups/SMS,
-Metrics customers/production/promotions/unpaid, More (customers, businesses,
-inventory, reviews, statements), Orders detailing details / report issue /
-mark solved, Products lists and bulk update, Settings (reviews, cash-ups,
-invoicing, tips, P&D general, closed dates, out-of-area, store billing/info/security,
-website booking/directory, workflow assembly/customers), Users (login history,
-new user, payroll, edits, deletions, hours).
+## 15. Online & integrations (later)
+- Website booking tool: hosted link, or embed on a new / existing page of the store's site.
+- Directory listing: store description, services offered (wash & fold, self-serve,
+  dry cleaning, alterations, shoe cleaning / repair…), amenities (parking, wifi,
+  kids area, wheelchair access, coffee).
+- Hosted website, AI agent; API keys and webhooks for third parties.
+- The vendor's own subscription billing page does not apply to us.

@@ -36,7 +36,9 @@ Mark each feature: `[ ]` undecided · `[MVP]` first release · `[Later]` · `[No
 - [ ] Taxes
 
 ### Stores and staff
-- [ ] Multiple store locations; shared catalog and customers across stores
+- [MVP] Multiple store locations; shared catalog and customers across stores, with per-store
+  price overrides and products a store doesn't sell; staff may work at several stores;
+  order numbers count company-wide
 - [ ] Staff accounts with roles and permissions
 - [ ] Activity log of staff actions
 - [ ] Clock in / out, hours and overtime
@@ -155,7 +157,7 @@ add `catalog`, `orders`, `marketing`, `notifications`.
 
 ## Open questions
 1. What is the VIZCRM app for — customers, or managers on the go?
-2. One store or several? A central cleaning plant?
+2. ~~One store or several?~~ Several (a company with stores). Still open: a central cleaning plant?
 3. Card payment provider / card reader (Stripe Terminal, Square, other)?
 4. Receipt / tag printer and scale models?
 5. Pickup and delivery: own drivers, couriers (DoorDash / Uber), or both?

@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'apps.stores',
     'apps.catalog',
     'apps.contacts',
+    'apps.orders',
     'apps.production',
     'apps.payments',
     'apps.deliveries',
@@ -172,6 +173,8 @@ REST_FRAMEWORK = {
 SPECTACULAR_SETTINGS = {
     'TITLE': 'VIZCRM API',
     'VERSION': '0.1.0',
+    # An order's status and an issue's stage share one set of choices.
+    'ENUM_NAME_OVERRIDES': {'OrderStatusEnum': 'apps.orders.models.Order.Status'},
 }
 
 # Expo dev server (web preview) during development.

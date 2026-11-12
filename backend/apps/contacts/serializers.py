@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from apps.catalog.models import PriceList
-from apps.stores.scoping import StoreScopedPrimaryKeyField
+from apps.stores.scoping import CompanyScopedPrimaryKeyField
 
 from .models import BusinessAccount, Customer, CustomerGroup, phone_digits
 
@@ -13,7 +13,7 @@ class CustomerGroupSerializer(serializers.ModelSerializer):
 
 
 class BusinessAccountSerializer(serializers.ModelSerializer):
-    price_list = StoreScopedPrimaryKeyField(queryset=PriceList.objects.all(), required=False, allow_null=True)
+    price_list = CompanyScopedPrimaryKeyField(queryset=PriceList.objects.all(), required=False, allow_null=True)
 
     class Meta:
         model = BusinessAccount
@@ -24,11 +24,12 @@ class BusinessAccountSerializer(serializers.ModelSerializer):
 
 
 class CustomerSerializer(serializers.ModelSerializer):
-    business = StoreScopedPrimaryKeyField(queryset=BusinessAccount.objects.all(), required=False, allow_null=True)
-    price_list = StoreScopedPrimaryKeyField(queryset=PriceList.objects.all(), required=False, allow_null=True)
-    groups = StoreScopedPrimaryKeyField(queryset=CustomerGroup.objects.all(), many=True, required=False)
+    business = CompanyScopedPrimaryKeyField(queryset=BusinessAccount.objects.all(), required=False, allow_null=True)
+    price_list = CompanyScopedPrimaryKeyField(queryset=PriceList.objects.all(), required=False, allow_null=True)
+    groups = CompanyScopedPrimaryKeyField(queryset=CustomerGroup.objects.all(), many=True, required=False)
     full_name = serializers.CharField(read_only=True)
-    # The price list orders will use: the customer's own, else the business's, else none (store default).
+    # The price list orders at the current store will use: the customer's own, else the business's,
+    # else the store's default.
     effective_price_list = serializers.SerializerMethodField()
 
     class Meta:
@@ -39,11 +40,12 @@ class CustomerSerializer(serializers.ModelSerializer):
             'street_address', 'unit', 'city', 'region', 'postal_code', 'latitude', 'longitude',
             'driver_instructions',
             'business', 'price_list', 'effective_price_list', 'discount_percent',
-            'groups', 'preferences', 'notes', 'private_notes', 'created_at', 'updated_at',
+            'groups', 'preferences', 'notes', 'private_notes', 'walk_in', 'home_store', 'created_at', 'updated_at',
         ]
+        read_only_fields = ['home_store']
 
     def get_effective_price_list(self, customer) -> int | None:
-        price_list = customer.effective_price_list()
+        price_list = customer.effective_price_list(self.context['request'].store)
         return price_list.pk if price_list else None
 
     def validate_phone(self, value):
@@ -52,7 +54,7 @@ class CustomerSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        required = self.context['request'].user.store.customer_required_fields
+        required = self.context['request'].store.customer_required_fields
         # The 'address' setting requires a street address; the other address fields stay optional.
         checks = {'phone': 'phone', 'email': 'email', 'address': 'street_address'}
         errors = {}

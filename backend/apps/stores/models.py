@@ -57,7 +57,27 @@ def default_customer_required_fields():
     return ['phone']
 
 
+class Company(models.Model):
+    """A business with one or more stores. Its stores share the catalog and customers."""
+
+    name = models.CharField(max_length=120)
+    primary_contact = models.CharField(max_length=120, blank=True)
+    phone = models.CharField(max_length=40, blank=True)
+    email = models.EmailField(blank=True)
+    website = models.URLField(blank=True)
+
+    class Meta:
+        verbose_name_plural = 'companies'
+
+    def __str__(self):
+        return self.name
+
+
 class Store(models.Model):
+    class DetailingOrders(models.TextChoices):
+        QUICK_DROP = 'quick_drop', 'Only Quick Drop orders'
+        ALL = 'all', 'All orders'
+
     class TaxMode(models.TextChoices):
         EXCLUSIVE = 'exclusive', 'Added on top of product price'
         INCLUSIVE = 'inclusive', 'Included in product price'
@@ -69,6 +89,8 @@ class Store(models.Model):
     class DistanceUnit(models.TextChoices):
         IMPERIAL = 'imperial', 'Miles / feet'
         METRIC = 'metric', 'Kilometres / metres'
+
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='stores')
 
     # Name & location
     name = models.CharField(max_length=120)
@@ -91,6 +113,9 @@ class Store(models.Model):
     phone = models.CharField(max_length=40, blank=True)
     email = models.EmailField(blank=True)
     website = models.URLField(blank=True)
+
+    # Express price for products without their own express price.
+    express_multiplier = models.DecimalField(max_digits=4, decimal_places=2, default=Decimal('1.50'))
 
     # Branding
     logo = models.ImageField(upload_to='store-logos/', blank=True)
@@ -126,11 +151,56 @@ class Store(models.Model):
     turnaround_excluded_weekdays = models.JSONField(default=list, blank=True, validators=[validate_weekdays])
 
     # Pricing
-    # Express price for products without their own express price.
-    express_multiplier = models.DecimalField(max_digits=4, decimal_places=2, default=Decimal('1.50'))
+    # For customers with no price list of their own (or from their business). Blank means product prices.
+    default_price_list = models.ForeignKey(
+        'catalog.PriceList', on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+    # A customer's first order gets this discount, or their own discount if that's bigger.
+    first_order_discount_percent = models.DecimalField(
+        'first order discount (%)', max_digits=5, decimal_places=2, default=Decimal('0'),
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
+    # Orders under these amounts (before discount) are charged up to them. Not applied to retail sales.
+    minimum_order_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal('0'), validators=[MinValueValidator(0)]
+    )
+    minimum_express_order_amount = models.DecimalField(
+        'minimum order amount for express', max_digits=10, decimal_places=2, default=Decimal('0'),
+        validators=[MinValueValidator(0)],
+    )
+
+    # Order cleaned / collected: what staff must enter.
+    require_rack_when_cleaned = models.BooleanField('prompt for storage rack location', default=True)
+    require_bags_when_cleaned = models.BooleanField('prompt for number of bags and hanging items', default=False)
+    reweigh_when_cleaned = models.BooleanField('prompt to re-weigh weight products when cleaned', default=False)
+    reweigh_when_collected = models.BooleanField('prompt to re-weigh weight products when collected', default=False)
+    # Hide orders from the order board after this many days. Blank means never.
+    archive_ready_after_days = models.PositiveSmallIntegerField(
+        'archive ready orders after (days)', null=True, blank=True
+    )
+    archive_collected_after_days = models.PositiveSmallIntegerField(
+        'archive collected orders after (days)', null=True, blank=True
+    )
 
     # Production
     rack_slot_count = models.PositiveIntegerField(default=50)
+
+    # Detailing: an optional first stage where staff itemise and check orders before cleaning.
+    detailing_enabled = models.BooleanField('use detailing stage', default=True)
+    # Quick Drop orders are itemised in Detailing, so they need it on.
+    quick_drop_enabled = models.BooleanField(
+        'enable Quick Drop', default=True, help_text='Take in orders without itemising them at drop-off.'
+    )
+    # Lets staff edit an order from the Detailing tab before detailing it.
+    detailing_show_edit_button = models.BooleanField('show edit button in detailing', default=False)
+    detailing_orders = models.CharField(
+        'in-store orders to send to detailing', max_length=20,
+        choices=DetailingOrders.choices, default=DetailingOrders.QUICK_DROP,
+    )
+    # When sending all in-store orders: only those with an item in one of these sections. Empty means any.
+    detailing_sections = models.ManyToManyField(
+        'catalog.Section', blank=True, related_name='+', verbose_name='limit detailing to sections'
+    )
 
     # Customers: what staff must enter when creating a customer (a name always is).
     customer_required_fields = models.JSONField(
@@ -143,6 +213,10 @@ class Store(models.Model):
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        if self.quick_drop_enabled and not self.detailing_enabled:
+            raise ValidationError({'quick_drop_enabled': 'Quick Drop needs the detailing stage, where its items are added.'})
 
     @property
     def tz(self):

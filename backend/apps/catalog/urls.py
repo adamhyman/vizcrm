@@ -8,5 +8,6 @@ router.register('products', views.ProductViewSet)
 router.register('price-lists', views.PriceListViewSet)
 router.register('price-list-items', views.PriceListItemViewSet)
 router.register('upcharges', views.UpchargeViewSet)
+router.register('store-products', views.StoreProductViewSet)
 
 urlpatterns = router.urls
